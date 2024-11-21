@@ -44,6 +44,15 @@ A prominent feature is the minimap, which allows navigation and analysis of a lo
 
 The minimap can be scaled (zoomed out and in) by holding the Control key and at the same time turning the mouse wheel, while the pointer is positioned over the minimap. The lines (rows) of the log that are visible, are indicated by a shaded area in the minimap. Scrolling the log is done with the scroll bar immediately to the left of the minimap, or by using the mouse wheel while the pointer is positioned over the log.
 
+### Side by side comparison
+
+**Comparing files:** 
+     Open first file using the instructions above, then click the compare button and select the second file. To toggle synchronous scrolling, click the link button in the menu bar.
+
+The feature allows comparison of two log files in one view including their minimaps. The initial log file is located on the left side and the second log file is located on the right side of the window with their minimaps being in the middle. The files have synchronized scrolling, which can be also toggled off. In case the scroll is synchronized and one file is shorter, you can still scroll the other one.
+
+Copyright 2024 ASML Netherlands B.V
+
 ## User and Developer Documentation
 For more information, check the [Tracy user and developer documentation](https://tno.github.io/vscode-tracy/).
 
