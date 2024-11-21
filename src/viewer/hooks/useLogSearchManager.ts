@@ -1,4 +1,6 @@
-import { LogEntryCharMaps } from "../types";
+import { logDataToString } from "./useTracyLogData";
+import { LogEntryCharMaps } from "../interfaces";
+import { types } from "../types";
 
 export const escapeSpecialChars = (text: string): string => {
     let safeText = "";
@@ -18,102 +20,59 @@ export const escapeSpecialChars = (text: string): string => {
     return safeText;
 };
 
-// Long function to reduce number of checks
+const getLogLine = (
+    logData: types.TracyLogData[] | types.TracyLogData,
+    caseSearchBool: boolean
+): string => {
+    var logText: string;
+    if (Array.isArray(logData)) {
+        logText = logData.join(" ");
+    } else {
+        logText = logDataToString(logData);
+    }
+
+    if (!caseSearchBool) {
+        logText = logText.toLocaleLowerCase();
+    }
+
+    return logText;
+}
+
+const matchesSearchQuery = (
+    logData: types.TracyLogData[] | types.TracyLogData,
+    searchText: string,
+    reSearchBool: boolean,
+    wholeSearchBool: boolean,
+    caseSearchBool: boolean,
+): boolean => {
+    let logLine = getLogLine(logData, caseSearchBool);
+
+    if (reSearchBool) {
+        let flags = caseSearchBool ? "gs" : "gsi";
+        
+        if (wholeSearchBool)
+            searchText = "\\b" + searchText + "\\b";
+        
+        return useRegularExpressionSearch(flags, searchText, logLine);
+    }
+
+    if (wholeSearchBool) {
+        return matchWholeString(logLine, searchText);
+    }
+
+    return logLine.indexOf(searchText) !== -1;
+}
+
 export const returnSearchIndices = (
-    rows: string[][],
-    columnIndex: number,
+    logData: types.TracyLogData[][] | types.TracyLogData[],
     searchText: string,
     reSearchBool: boolean,
     wholeSearchBool: boolean,
     caseSearchBool: boolean,
 ): number[] => {
-    let loglineText: string;
-    const indices: number[] = [];
     if (!caseSearchBool && !reSearchBool) searchText = searchText.toLowerCase();
-    if (!reSearchBool) {
-        if (!wholeSearchBool) {
-            if (columnIndex === -1) {
-                if (!caseSearchBool) {
-                    for (let i = 0; i < rows.length; i++) {
-                        loglineText = rows[i].join(" ").toLowerCase();
-                        if (loglineText.indexOf(searchText) != -1)
-                            indices.push(i);
-                    }
-                } else {
-                    for (let i = 0; i < rows.length; i++) {
-                        loglineText = rows[i].join(" ");
-                        if (loglineText.indexOf(searchText) != -1)
-                            indices.push(i);
-                    }
-                }
-            } else {
-                if (!caseSearchBool) {
-                    for (let i = 0; i < rows.length; i++) {
-                        loglineText = rows[i][columnIndex].toLowerCase();
-                        if (loglineText.indexOf(searchText) != -1)
-                            indices.push(i);
-                    }
-                } else {
-                    for (let i = 0; i < rows.length; i++) {
-                        loglineText = rows[i][columnIndex];
-                        if (loglineText.indexOf(searchText) != -1)
-                            indices.push(i);
-                    }
-                }
-            }
-        }
-        else {
-            if (columnIndex === -1) {
-                if (!caseSearchBool) {
-                    for (let i = 0; i < rows.length; i++) {
-                        loglineText = rows[i].join(" ").toLowerCase();
-                        if (matchWholeString(loglineText, searchText))
-                            indices.push(i);
-                    }
-                } else {
-                    for (let i = 0; i < rows.length; i++) {
-                        loglineText = rows[i].join(" ");
-                        if (matchWholeString(loglineText, searchText))
-                            indices.push(i);
-                    }
-                }
-            } else {
-                if (!caseSearchBool) {
-                    for (let i = 0; i < rows.length; i++) {
-                        loglineText = rows[i][columnIndex].toLowerCase();
-                        if (matchWholeString(loglineText, searchText))
-                            indices.push(i);
-                    }
-                } else {
-                    for (let i = 0; i < rows.length; i++) {
-                        loglineText = rows[i][columnIndex];
-                        if (matchWholeString(loglineText, searchText))
-                            indices.push(i);
-                    }
-                }
-            }
-        }
-    } else {
-        let flags: string;
-        if (!caseSearchBool) flags = "gsi";
-        else flags = "gs";
-        if (wholeSearchBool)
-            searchText = "\\b" + searchText + "\\b";
-        if (columnIndex === -1) {
-            for (let i = 0; i < rows.length; i++) {
-                loglineText = rows[i].join(" ");
-                if (useRegularExpressionSearch(flags, searchText, loglineText))
-                    indices.push(i);
-            }
-        } else {
-            for (let i = 0; i < rows.length; i++) {
-                loglineText = rows[i][columnIndex];
-                if (useRegularExpressionSearch(flags, searchText, loglineText))
-                    indices.push(i);
-            }
-        }
-    }
-    return indices;
+    return logData.map((data) => matchesSearchQuery(data, searchText, reSearchBool, wholeSearchBool, caseSearchBool))
+        .flatMap((match, i) => match ? [i] : []);
 };
 
 export const useRegularExpressionSearch = (

@@ -2,7 +2,7 @@
 import React from "react";
 import Rule from "./Rule";
 import FlagRule from "./FlagRule";
-import LogFile from "../LogFile";
+import LogFile from "../lib/LogFile";
 import Table from "./Tables/Table";
 import StateTable from "./Tables/StateTable";
 import TransitionTable from "./Tables/TransitionTable";
@@ -15,6 +15,7 @@ import {
 	VSCodePanelView,
 } from "@vscode/webview-ui-toolkit/react";
 import { useRegularExpressionSearch } from "../hooks/useLogSearchManager";
+import { logDataToString } from "../hooks/useTracyLogData";
 
 interface State {
 	name: string;
@@ -220,7 +221,7 @@ export default class StateBasedRule extends Rule {
 				);
 		};
 
-		const allColumns = ["", ...logFile.contentHeaders, ...user_columns];
+		const allColumns = ["", ...logFile.getAllHeaders().filter((h) => h !== this.column)];
 
 		const transitionRows: any[][] = [];
 		if (this.ruleStates.length > 0) {
@@ -526,7 +527,7 @@ export default class StateBasedRule extends Rule {
 					for (const conditionSet of transition.conditions) {
 						let allConditionsSatisfied = true;
 						for (const condition of conditionSet) {
-							const logValue = logFile.value(condition.Column, r) ?? "";
+							const logValue = logDataToString(logFile.value(condition.Column, r));
 							if (condition.Operation === "contains") {
 								if (!logValue.includes(condition.Text)) {
 									allConditionsSatisfied = false;

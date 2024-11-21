@@ -2,7 +2,7 @@
 import React from "react";
 import Rule from "./Rule";
 import StateBasedRule from "./StateBasedRule";
-import LogFile from "../LogFile";
+import LogFile from "../lib/LogFile";
 import Table from "./Tables/Table";
 import FlagTable from "./Tables/FlagTable";
 import {
@@ -14,6 +14,7 @@ import {
 	VSCodePanelView,
 } from "@vscode/webview-ui-toolkit/react";
 import { useRegularExpressionSearch } from "../hooks/useLogSearchManager";
+import { logDataToString } from "../hooks/useTracyLogData";
 
 interface Flag {
 	name: string;
@@ -144,7 +145,7 @@ export default class FlagRule extends Rule {
 		logFile: LogFile,
 		rules: Rule[]
 	) {
-		const allColumns = ["", ...logFile.contentHeaders, ...user_columns];
+		const allColumns = ["", ...logFile.getAllHeaders().filter((h) => h !== this.column)];
 
 		const editFlagName = (index: number, value: string) => {
 			const flags = [...this.flags];
@@ -474,7 +475,7 @@ export default class FlagRule extends Rule {
 					for (const conditionSet of flag.conditions) {
 						let allConditionsSatisfied = true;
 						for (const condition of conditionSet) {
-							const logValue = logFile.value(condition.Column, r) ?? "";
+							const logValue = logDataToString(logFile.value(condition.Column, r));
 							if (condition.Operation === "contains") {
 								if (!logValue.includes(condition.Text)) {
 									allConditionsSatisfied = false;
@@ -524,7 +525,7 @@ export default class FlagRule extends Rule {
 				}
 			} else if (this.flagType === "Capture Match") {
 				for (const flag of this.flags) {
-					const logValue = logFile.value(flag.conditions[0][0].Column, r) ?? "";
+					const logValue = logDataToString(logFile.value(flag.conditions[0][0].Column, r));
 					const flagFound = logValue.match(flag.conditions[0][0].Text);
 					if (flagFound !== null) values[r] = flagFound[1];
 				}

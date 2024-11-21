@@ -1,8 +1,42 @@
 import * as vscode from 'vscode';
 import fs from 'fs';
+import TracyAPI from './TracyAPI';
+import DefaultJsonConverter from './DefaultJsonConverter';
+import TracyConverter from './api/converter/TracyConverter';
+
+const API = new TracyAPI(new DefaultJsonConverter());
+let chosenConverter: TracyConverter | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
+	const disposable = vscode.commands.registerCommand('tracy.openDocument', async () => {
+		const editor = vscode.window.activeTextEditor;
+		if (editor) {
+			const converters = API.getConvertersForFile(editor.document.fileName);
+			if (converters.length === 1) {
+				chosenConverter = converters[0];
+			} else {
+				const choice = await vscode.window.showQuickPick(converters.map((c) => c.name));
+				if (!choice) {
+					return;
+				}
+
+				const converter = converters.filter((c) => c.name == choice).pop();
+				if (!converter) {
+					throw new Error('Chosen converter does not exist!');
+				}
+				
+				chosenConverter = converter;
+			}
+
+			vscode.commands.executeCommand('vscode.openWith', editor.document.uri, 'tno.tracy');
+		} else {
+			vscode.window.showErrorMessage("Current document is not open in a text editor.");
+		}
+	});
+
+	context.subscriptions.push(disposable);
 	context.subscriptions.push(EditorProvider.register(context));
+	return API;
 }
 
 export class EditorProvider implements vscode.CustomTextEditorProvider {
@@ -32,11 +66,26 @@ export class EditorProvider implements vscode.CustomTextEditorProvider {
 		webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview);
 
 		function updateWebview(message_type: string) {
-			webviewPanel.webview.postMessage({
-				type: message_type,
-				text: document.getText(),
-				rules: fs.existsSync(rulesFile) ? JSON.parse(fs.readFileSync(rulesFile, { encoding: 'utf8' })) : [],
-			});
+			let converter: TracyConverter;
+			if (chosenConverter) {
+				converter = chosenConverter;
+				chosenConverter = undefined;
+			} else {
+				converter = API.getConvertersForFile(document.fileName)[0];
+				if (!converter) {
+					vscode.window.showErrorMessage(`No converter found for: ${document.fileName}`);
+					return;
+				}
+			}
+
+			converter.parseLog(document.fileName, document.getText())
+				.then((logFile) => {
+					webviewPanel.webview.postMessage({
+						type: message_type,
+						logFile,
+						rules: fs.existsSync(rulesFile) ? JSON.parse(fs.readFileSync(rulesFile, { encoding: 'utf8' })) : [],
+					});
+				}).catch(console.log);
 		}
 
 		// Hook up event handlers so that we can synchronize the webview with the text document.
@@ -60,11 +109,15 @@ export class EditorProvider implements vscode.CustomTextEditorProvider {
 
 		// Receive message from the webview.
 		webviewPanel.webview.onDidReceiveMessage(e => {
-
 			if (e.type === 'readFile') {
 				updateWebview('readFile');
+				if (e.comparisonFilePath) {
+					this.convertComparisonFile(e.comparisonFilePath, webviewPanel);
+				}
 			} else if (e.type === 'saveRules') {
 				fs.writeFileSync(rulesFile, JSON.stringify(e.rules));
+			} else if (e.type === 'showCompareFileDialog') {
+				this.showCompareFileDialog(document, webviewPanel);
 			}
 			else if (e.type === 'saveStructureDefinition') {
 
@@ -122,14 +175,49 @@ export class EditorProvider implements vscode.CustomTextEditorProvider {
 					if (fileUri) {
 						fs.writeFileSync(fileUri.fsPath, JSON.stringify(e.data));
 					}
-				});	
-				// fs.writeFileSync(exportFile, JSON.stringify(e.data));
-				// webviewPanel.webview.postMessage({
-				// 	type: "readExportPath",
-				// 	text: fileUri.fsPath,
-				// });
+				});
+			}
+			else if (e.type === 'showErrorMessage') {
+				vscode.window.showErrorMessage(e.message);
 			}
 		});
+	}
+
+	private showCompareFileDialog(document: vscode.TextDocument, webviewPanel: vscode.WebviewPanel) {
+		const options: vscode.OpenDialogOptions = {
+			title: 'Select Log File',
+			defaultUri: document.uri,
+			canSelectFolders: false,
+			canSelectMany: false,
+			filters: {
+				'Tracy files': API.getSuportedFileExtentions()
+		   }
+		};
+		
+		vscode.window.showOpenDialog(options).then(fileUri => {
+			if (!fileUri) {
+				return;
+			}
+
+			const path = fileUri[0].fsPath;
+			this.convertComparisonFile(path, webviewPanel);
+		});	
+	}
+
+	private convertComparisonFile(path: string, webviewPanel: vscode.WebviewPanel) {
+		const converter = API.getConvertersForFile(path)[0];
+		if (!converter) {
+			vscode.window.showErrorMessage(`No converter found for: ${path}`);
+			return;
+		}
+
+		converter.parseLogFile(path)
+			.then((logFile) => {
+				webviewPanel.webview.postMessage({
+					type: 'loadFileForComparison',
+					logFile
+				});
+			}).catch(console.log);
 	}
 
 	/**

@@ -1,479 +1,420 @@
 import React from "react";
 import Rule from "./rules/Rule";
-import LogFile from "./LogFile";
-import LogView from "./log/LogView";
-import MinimapView from "./minimap/MinimapView";
-import Tooltip from "@mui/material/Tooltip";
-import { LogViewState, StructureMatchId, RowProperty, Segment, LogEntryCharMaps, StructureDefinition } from "./types";
+import LogFile from "./lib/LogFile";
+import { ColumnSelection, LogViewState, VsCode } from "./interfaces";
 import {
-	COLUMN_0_HEADER_STYLE,
-	COLUMN_2_HEADER_STYLE,
-	MINIMAP_COLUMN_WIDTH,
-	SelectedRowType,
-	StructureHeaderColumnType,
-	defaultAppState,
-} from "./constants";
-import {
-	VSCodeButton,
-	VSCodeTextField,
-	VSCodeDropdown,
-	VSCodeOption,
+	VSCodeButton
 } from "@vscode/webview-ui-toolkit/react";
-import {
-	useGetCharIndicesForLogEntries,
-	useStructureRegularExpressionSearch,
-} from "./hooks/useStructureRegularExpressionManager";
-import { returnSearchIndices } from "./hooks/useLogSearchManager";
-import { constructNewRowProperty } from "./hooks/useRowProperty";
-import StructureDialog from "./structures/StructureDialog";
-import StatesDialog from "./rules/Dialogs/StatesDialog";
-import FlagsDialog from "./rules/Dialogs/FlagsDialog";
-import ExportDialog from "./rules/Dialogs/ExportDialog";
-import MinimapHeader from "./minimap/MinimapHeader";
-import SelectColDialog from "./log/SelectColDialog";
+import ExportDialog from "./components/dialogs/ExportDialog";
+import SelectColDialog from "./components/dialogs/SelectColDialog";
+import StructureDialog from "./components/dialogs/StructureDialog";
+import SearchBar from "./components/SearchBar";
+import TracyIconButton, { IconType } from "./components/TracyIconButton";
+import LogViewAndMinimap from "./components/LogViewAndMinimap";
+import SideBySideAlignmentHandler from "./lib/SideBySideAlignmentHandler";
+import ColorMappingHandler from "./lib/ColorMappingHandler";
+import StatesDialog from "./components/dialogs/StatesDialog";
+import FlagsDialog from "./components/dialogs/FlagsDialog";
+import MinimapHeader from "./components/minimap/MinimapHeader";
+import { constants } from "./constants";
+import { enums } from "./enums";
+import { isLoadFileForComparisonMessage, isReadExportPathMessage, isReadFileMessage } from "./hooks/useMessage";
+import { createEmptyLogFile, createLogFile, toExportData } from "./hooks/useLogFile";
+import { getVisibleColumnsMinimap } from "./hooks/useColumnSelection";
+import RelativeTimeColumn, { HEADER as RELATIVE_TIME_HEADER, handleSetStartingPoint } from "./lib/columns/RelativeTimeColumn";
+import { setVsState, storeAppState } from "./hooks/useVsCode";
 
-interface Props { }
-interface State {
+export interface State {
 	logFile: LogFile;
-	logViewState: LogViewState | undefined;
 	rules: Rule[];
-	showExportDialog: boolean;
-	showStatesDialog: boolean;
-	showStructureDialog: boolean;
-	showFlagsDialog: boolean;
-	showSelectDialog: boolean;
+
+	// Comparison related
+	comparisonFile?: LogFile;
+
+	// UI settings
 	showMinimapHeader: boolean;
-	selectedColumns: boolean[];
-	selectedColumnsMini: boolean[];
 	coloredTable: boolean;
+	selectedColumns: ColumnSelection;
+	currentDialog?: enums.DialogType;
 
 	// Search related
-	reSearch: boolean;
-	wholeSearch: boolean;
-	caseSearch: boolean;
 	filterSearch: boolean;
-	searchMatches: number[];
-	currentSearchMatch: number | null;
-	currentSearchMatchIndex: number | null;
-
-	// Structure related
-	logFileAsString: string;
-	loadedStructureDefinition: StructureDefinition | null;
-	logEntryCharIndexMaps: LogEntryCharMaps | null;
-	selectedLogRows: string[][];
-	rowProperties: RowProperty[];
-	lastSelectedRow: number | undefined;
-	structureMatches: number[][];
-	currentStructureMatch: number[];
-	currentStructureMatchIndex: StructureMatchId;
-
-	//Collapsible Table
-	collapsibleRows: { [key: number]: Segment };
+	searchMatches: number[][];
+	comparisonSearchMatches?: number[][];
+	currentSearchMatch: number[];
 }
 
-
-let searchTimeoutId;
-let searchText: string = "";
-let searchColumn: string = "All";
 let exportPath: string = "";
-let logHeaderColumnTypes: StructureHeaderColumnType[] = [];
 
-export default class App extends React.Component<Props, State> {
+export default class App extends React.Component<{}, State> {
 	// @ts-ignore
-	vscode = acquireVsCodeApi();
-	previousSession = this.vscode.getState();
-	child = React.createRef<HTMLDivElement>();
-	constructor(props: Props) {
-		super(props);
-		this.updateSearchMatches = this.updateSearchMatches.bind(this);
+	vscode = acquireVsCodeApi() as VsCode;
+	storedState = this.vscode.getState();
 
-		this.state = defaultAppState;
-		if (this.previousSession !== undefined) {
-			searchText = this.previousSession.searchText;
-			searchColumn = this.previousSession.searchColumn;
-			["searchColumn", "searchText"].forEach(e => delete this.previousSession[e]);
-			const { showFlagsDialog, showStatesDialog, showStructureDialog, ...updatedState } = this.previousSession;
-			this.state = { ...this.state, ...updatedState }
+	primaryViewRef = React.createRef<LogViewAndMinimap>();
+	comparisonViewRef = React.createRef<LogViewAndMinimap>();
+	sideBySideAlignmentHandler: SideBySideAlignmentHandler;
+	colorMappingHandler: ColorMappingHandler;
+	
+	constructor(props: any) {
+		super(props);
+
+		this.sideBySideAlignmentHandler = new SideBySideAlignmentHandler(this.primaryViewRef, this.comparisonViewRef);
+		this.colorMappingHandler = new ColorMappingHandler();
+
+		this.state = {
+			rules: [],
+			logFile: createEmptyLogFile(),
+			coloredTable: false,
+			showMinimapHeader: true,
+			selectedColumns: {},
+			filterSearch: false,
+			searchMatches: [],
+			currentSearchMatch: []
+		};
+
+		// Override default state with previous session state
+		let comparisonFilePath: string | undefined;
+		if (this.storedState !== undefined) {
+			const { comparisonFile, ui } = this.storedState;
+			this.state = { ...this.state, ...ui };
+			comparisonFilePath = comparisonFile;
 		}
 
 		this.onMessage = this.onMessage.bind(this);
+		this.handlePrimaryLogViewStateChange = this.handlePrimaryLogViewStateChange.bind(this);
+		this.handleComparisonLogViewStateChange = this.handleComparisonLogViewStateChange.bind(this);
+		
 		window.addEventListener("message", this.onMessage);
 		document.addEventListener("contextmenu", (event) => {
 			event.preventDefault();
 		});
-		this.vscode.postMessage({ type: "readFile" });
+		this.vscode.postMessage({ type: "readFile", comparisonFilePath });
 	}
 
-	componentDidUpdate(prevProps: Props, prevState: State) {
+	componentDidUpdate(prevProps: any, prevState: State) {
 		if (this.state !== prevState) {
-			const { rules, logFile, logFileAsString, logEntryCharIndexMaps, ...updatedState } = this.state;
-			this.vscode.setState({ ...updatedState, searchText, searchColumn })
-		}
-		if (this.state.logFile !== prevState.logFile ||
-			this.state.collapsibleRows !== prevState.collapsibleRows) {
-			this.render();
+			storeAppState(this.vscode, this.state);
 		}
 	}
 
 	onMessage(event: MessageEvent) {
-		const message = event.data;
-		if (message.type === "readFile") {
+		const message: unknown = event.data;
+		if (isReadFileMessage(message)) {
 			const rules = message.rules.map((r) => Rule.fromJSON(r)).filter((r) => r);
-			const lines = JSON.parse(message.text);
-			const logFileText = JSON.stringify(lines, null, 2);
-			const logEntryCharIndexMaps = useGetCharIndicesForLogEntries(logFileText);
-			let logFile = LogFile.create(lines, rules);
-			// if (this.previousSession)
-			// 	logFile.setSelectedColumns(this.previousSession.selectedColumns, this.previousSession.selectedColumnsMini);
-			this.extractHeaderColumnTypes(logFile);
+			const { dateTimeIndex } = message.logFile;
+			let logFile = createLogFile(message.logFile, rules);
+			if (dateTimeIndex !== undefined) {
+				logFile.registerCustomColumn(new RelativeTimeColumn(true, false));
+			}
+			this.colorMappingHandler.computeAllColors(logFile, this.state.comparisonFile);
+			
 			this.setState({
 				rules,
-				logFile,
-				logFileAsString: logFileText,
-				logEntryCharIndexMaps: logEntryCharIndexMaps,
+				logFile
 			});
-
-			if (!this.previousSession) {
-				const newRowsProps = logFile.rows.map(() =>
-					constructNewRowProperty(true, SelectedRowType.None),
-				);
-				this.setState({ rowProperties: newRowsProps });
-			}
-			else {
-				this.setState({
-					showFlagsDialog: this.previousSession.showFlagsDialog,
-					showStatesDialog: this.previousSession.showStatesDialog,
-					showStructureDialog: this.previousSession.showStructureDialog,
-				});
-			}
-		} else if (message.type === "loadedStructureDefinition") {
-			const loadedStructureDefinition = message.structureDefinition;
-			console.log("loadedStructureDefinition - in App", loadedStructureDefinition);
-			this.setState({loadedStructureDefinition});
 		}
-		else if (message.type === "readExportPath") {
+		else if (isReadExportPathMessage(message)) {
 			exportPath = message.text;
-			this.setState({ showExportDialog: true });
+			this.setState({ currentDialog: enums.DialogType.ExportDialog });
 		}
-	}
+		else if (isLoadFileForComparisonMessage(message)) {
+			const { headers, dateTimeIndex } = message.logFile;
+			let comparisonFile = createLogFile(message.logFile, this.state.rules);
 
-	extractHeaderColumnTypes(logFile: LogFile) {
-		logHeaderColumnTypes = [];
-		for (let h = 0; h < logFile.headers.length; h++) {
-			let headerType = StructureHeaderColumnType.Selected;
-
-			const cleanHeader = logFile.headers[h].name.toLowerCase().replace(/[\u200B-\u200D\uFEFF]/g, '');
-			if (cleanHeader === "timestamp") {
-				headerType = StructureHeaderColumnType.Unselected;
+			const selectedColumns = this.state.selectedColumns;
+			if (dateTimeIndex !== undefined) {
+				comparisonFile.registerCustomColumn(new RelativeTimeColumn());
+				
+				selectedColumns[RELATIVE_TIME_HEADER] = {logView: true, miniMap: true};
+				selectedColumns[headers[dateTimeIndex]] = {logView: true, miniMap: false};
 			}
-			if (!logFile.contentHeaders.includes(logFile.headers[h].name)) {
-				headerType = StructureHeaderColumnType.Custom;
-			}
+			comparisonFile.registerCustomColumn(new RelativeTimeColumn());
 
-			logHeaderColumnTypes.push(headerType);
+			this.colorMappingHandler.computeAllColors(this.state.logFile, comparisonFile);
+			
+			this.setState({ comparisonFile });
 		}
 	}
 
-	updateSearchField() {
-		clearTimeout(searchTimeoutId);
-		searchTimeoutId = setTimeout(this.updateSearchMatches, 1000);
-	}
-
-	clearSearchField() {
-		searchText = "";
-		const newRowsProps = this.clearRowsTypes();
-		this.setState({
-			filterSearch: false,
-			rowProperties: newRowsProps,
-			searchMatches: [],
-			currentSearchMatch: null,
-			currentSearchMatchIndex: null
-		});
-	}
-
-	updateSearchMatches() {
-		if (searchText === "")
-			this.clearSearchField();
-		else {
-			const colIndex = this.state.logFile.headers.findIndex((h) => h.name === searchColumn);
-			const searchMatches = returnSearchIndices(
-				this.state.logFile.rows,
-				colIndex,
-				searchText,
-				this.state.reSearch,
-				this.state.wholeSearch,
-				this.state.caseSearch,
-			);
-
-			const currentSearchMatch = searchMatches[0];
-			const currentSearchMatchIndex = 0;
-			const [rowProperties, filterSearch] = this.updateVisibleSearchMatches(searchMatches, this.state.filterSearch);
-
-			this.setState({ searchMatches, currentSearchMatch, currentSearchMatchIndex, rowProperties, filterSearch });
-		}
-	}
-
-	updateVisibleSearchMatches(searchMatches: number[], filterSearch: boolean) {
-		let rowProperties;
-		if (!filterSearch) {
-			rowProperties = this.state.logFile.rows.map((row, index) => {
-				if (searchMatches.includes(index))
-					return constructNewRowProperty(true, SelectedRowType.SearchResult);
-				else return constructNewRowProperty(true, SelectedRowType.None);
-			});
-		}
-		else {
-			rowProperties = this.state.logFile.rows.map((row, index) => {
-				if (searchMatches.includes(index))
-					return constructNewRowProperty(true, SelectedRowType.SearchResult);
-				else return constructNewRowProperty(false, SelectedRowType.None);
-			});
-		}
-		this.setState({ rowProperties, filterSearch });
-		return [rowProperties, filterSearch];
-	}
-
-	handleAnnotationDialog(newRules: Rule[], isClose: boolean) {
+	handleAnnotationDialogClose(newRules: Rule[]) {
 		this.vscode.postMessage({ type: "saveRules", rules: newRules.map((r) => r.toJSON()) });
-		if (isClose === true)
-			this.setState({
-				rules: newRules,
-				logFile: this.state.logFile.updateLogFile(newRules, []),
-				showStatesDialog: false,
-				showFlagsDialog: false,
-			});
-		else this.setState({ rules: newRules });
-	}
 
-	handleSelectDialog(selectedColumns: boolean[], selectedColumnsMini: boolean[], isClose: boolean) {
-		if (isClose === true) {
-			this.setState({
-				selectedColumns: selectedColumns,
-				selectedColumnsMini: selectedColumnsMini,
-				logFile: this.state.logFile.setSelectedColumns(selectedColumns, selectedColumnsMini),
-				showSelectDialog: false,
-			});
-		}
-	}
+		const oldRuleHeaders = this.state.rules.map((r) => r.column);
+		const newRuleHeaders = newRules.map((r) => r.column);
 
-	handleStructureDialog(isClosing: boolean) {
-		if (isClosing === true) {
-			this.handleStructureUpdate(isClosing);
+		const { logFile } = this.state;
 
-		} else {
-			const { logFile, rowProperties, showStructureDialog } = this.state;
-
-			const selectedLogRows = logFile.rows.filter(
-				(v, i) => rowProperties[i].rowType === SelectedRowType.UserSelect,
-			);
-
-			if (selectedLogRows.length === 0) {
-				return;
-			}
-
-			if (!showStructureDialog) {
-				this.extractHeaderColumnTypes(logFile);
-				this.setState({ showStructureDialog: true });
-			}
-
-			this.setState({ selectedLogRows: selectedLogRows });
-		}
-	}
-
-	handleSavingStuctureDefinition(structureDefinition: string) {
-		this.vscode.postMessage({ type: "saveStructureDefinition", structureDefinition: structureDefinition});
-	}
-
-	handleLoadingStructureDefinition() {
-		this.vscode.postMessage({ type: "loadStructureDefinition"});
-	}
-
-	handleRowCollapse(rowIndex: number, isRendered: boolean) {
-		const newRowProps = this.state.rowProperties;
-		newRowProps[rowIndex].isRendered = isRendered;
-		this.setState({ rowProperties: newRowProps });
-	}
-
-	handleRowSelect(rowProperties: RowProperty[], rowIndex: number) {
-		if (rowProperties[rowIndex].rowType !== SelectedRowType.UserSelect)
-			return SelectedRowType.UserSelect;
-		else if (this.state.searchMatches.includes(rowIndex))
-			return SelectedRowType.SearchResult;
-		else
-			return SelectedRowType.None;
-	}
-
-	handleSelectedLogRow(rowIndex: number, event: React.MouseEvent) {
-		if (event.ctrlKey) {
-			const newRowProps = this.state.rowProperties;
-			const { structureMatches, lastSelectedRow } = this.state;
-
-			const structureMatchesLogRows = structureMatches.flat(1);
-
-			if (!structureMatchesLogRows.includes(rowIndex)) {
-				if (event.shiftKey && rowIndex !== this.state.lastSelectedRow) {
-					// Shift click higher in the event log
-					if (lastSelectedRow !== undefined && lastSelectedRow < rowIndex) {
-						for (let i = lastSelectedRow + 1; i < rowIndex + 1; i++) {
-							newRowProps[i].rowType = this.handleRowSelect(newRowProps, rowIndex);
-						}
-					}
-					// Shift click lower in the event log
-					else if (lastSelectedRow !== undefined && lastSelectedRow > rowIndex) {
-						for (let i = rowIndex; i < lastSelectedRow + 1; i++) {
-							newRowProps[i].rowType = this.handleRowSelect(newRowProps, rowIndex);
-						}
-					}
-				} else {
-					newRowProps[rowIndex].rowType = this.handleRowSelect(newRowProps, rowIndex);
-				}
-
-				this.setState({ rowProperties: newRowProps, lastSelectedRow: rowIndex });
-			}
-		}
-	}
-
-	clearRowsTypes(): RowProperty[] {
-		const clearedSelectedRows = this.state.rowProperties.map(() =>
-			constructNewRowProperty(true, SelectedRowType.None),
-		);
-		return clearedSelectedRows;
-	}
-
-	handleStructureUpdate(isClosing: boolean) {
-		const clearedSelectedRows = this.clearRowsTypes();
+		oldRuleHeaders.filter((r) => !newRuleHeaders.includes(r))
+			.forEach((h) => logFile.unRegisterCustomColumn(h));
+		
+		const updatedLogFile = this.state.logFile.updateLogFile(newRules);
+		this.colorMappingHandler.computeAllColors(updatedLogFile, this.state.comparisonFile);
 
 		this.setState({
-			showStructureDialog: !isClosing,
-			rowProperties: clearedSelectedRows,
-			loadedStructureDefinition: null,
-			structureMatches: [],
-			currentStructureMatchIndex: null,
-			currentStructureMatch: [],
-			logFile: this.state.logFile.updateLogFile(this.state.rules, [])
+			rules: newRules,
+			logFile: updatedLogFile,
+			currentDialog: undefined,
 		});
 	}
 
-	handleStructureMatching(expression: string) {
-		const rowProperties = this.clearRowsTypes();
-		const { logFileAsString, logEntryCharIndexMaps } = this.state;
-		let { currentStructureMatch, currentStructureMatchIndex } = this.state;
-
-		const structureMatches = useStructureRegularExpressionSearch(
-			expression,
-			logFileAsString,
-			logEntryCharIndexMaps!,
-		);
-
-		if (structureMatches.length >= 1) {
-			currentStructureMatchIndex = 0;
-			currentStructureMatch = structureMatches[0];
-		} else {
-			currentStructureMatchIndex = null;
-			currentStructureMatch = [];
-		}
-
+	handleSelectDialog(selectedColumns: ColumnSelection) {
 		this.setState({
-			rowProperties,
-			structureMatches,
-			currentStructureMatch,
-			currentStructureMatchIndex,
-			logFile: this.state.logFile.updateLogFile(this.state.rules, structureMatches)
+			selectedColumns: selectedColumns,
+			currentDialog: undefined
 		});
 	}
 
-	handleNavigation(isGoingForward: boolean, isStructureMatching: boolean) {
-		let matches, currentMatchIndex;
-		if (!isStructureMatching) {
-			matches = this.state.searchMatches;
-			currentMatchIndex = this.state.currentSearchMatchIndex;
+	handleSetRelativeTimeStartingPoint() {
+		let result = false;
+		
+		const primary = this.primaryViewRef.current;
+		if (primary) {
+			result = handleSetStartingPoint(primary) || result;
+		}
+		const comparison = this.comparisonViewRef.current;
+		if (comparison) {
+			result = handleSetStartingPoint(comparison) || result;
+		}
+
+		if (result) {
+			this.colorMappingHandler.computeColors(RELATIVE_TIME_HEADER, this.state.logFile, this.state.comparisonFile);
+			this.primaryViewRef.current?.forceUpdate();
+			this.comparisonViewRef.current?.forceUpdate();
 		}
 		else {
-			matches = this.state.structureMatches;
-			currentMatchIndex = this.state.currentStructureMatchIndex;
-		}
-
-		if (currentMatchIndex !== null) {
-			if (isGoingForward) {
-				currentMatchIndex =
-					currentMatchIndex < matches.length - 1
-						? currentMatchIndex + 1
-						: 0;
-			} else {
-				currentMatchIndex =
-					currentMatchIndex > 0
-						? currentMatchIndex - 1
-						: matches.length - 1;
-			}
-
-			if (!isStructureMatching) {
-				this.setState({
-					currentSearchMatchIndex: currentMatchIndex,
-					currentSearchMatch: matches[currentMatchIndex]
-				});
-			}
-			else {
-				this.setState({
-					currentStructureMatch: matches[currentMatchIndex],
-					currentStructureMatchIndex: currentMatchIndex,
-				});
-			}
+			this.vscode.postMessage({ type: "showErrorMessage", message: 'Select 1 starting point row'});
 		}
 	}
 
-	updateSegmentation(collapsibleRows: { [key: number]: Segment }) {
-		this.setState({ collapsibleRows });
+	handlePrimaryLogViewStateChange(trigger: enums.EventTrigger, state: LogViewState) {
+		this.sideBySideAlignmentHandler.handlePrimaryViewStateChange(trigger, state);
+		setVsState(this.vscode, {
+			primaryView: state
+		});
 	}
 
-	switchBooleanState(name: string) {
-		switch (name) {
-			case "coloredTable":
-				this.setState(({ coloredTable }) => ({ coloredTable: !coloredTable }));
-				break;
-			case "reSearch":
-				this.setState(({ reSearch }) => ({ reSearch: !reSearch }));
-				this.updateSearchField();
-				break;
-			case "wholeSearch":
-				this.setState(({ wholeSearch }) => ({ wholeSearch: !wholeSearch }));
-				this.updateSearchField();
-				break;
-			case "caseSearch":
-				this.setState(({ caseSearch }) => ({ caseSearch: !caseSearch }));
-				this.updateSearchField();
-				break;
-			case "filterSearch":
-				this.setState(({ filterSearch }) => ({ filterSearch: !filterSearch }));
-				break;
+	handleComparisonLogViewStateChange(trigger: enums.EventTrigger, state: LogViewState) {
+		this.sideBySideAlignmentHandler.handleComparisonViewStateChange(trigger, state);
+		setVsState(this.vscode, {
+			comparisonView: state
+		});
+	}
+
+	exportData(exportIndices?: number[]) {
+		const logFile = this.state.logFile;
+		if (exportIndices?.length === 0 || this.state.filterSearch === false)
+			exportIndices = undefined;
+		
+		const exportData = toExportData(logFile, exportIndices);
+		this.vscode.postMessage({ type: "exportData", data: exportData });
+	}
+
+	showCompareFileDialog() {
+		if (this.state.comparisonFile) {
+			this.setState({ comparisonFile: undefined});
+			this.colorMappingHandler.computeAllColors(this.state.logFile, undefined);
+		} else {
+			this.vscode.postMessage({
+				type: 'showCompareFileDialog'
+			});
 		}
 	}
 
-	exportData(exportIndices: number[], structureExport: boolean) {
-		var exportObjects: Object[] = []
-		const originalColumns = this.state.logFile.headers;
-		if (!structureExport)
-			if (exportIndices.length === 0 || this.state.filterSearch === false)
-				exportIndices = Array.from(Array(this.state.logFile.amountOfRows()).keys())
-		for (var index of exportIndices) {
-			var rowObject = {};
-			const row = this.state.logFile.rows[index]
-			for (var columnIndex = 0; columnIndex <= originalColumns.length - 1; columnIndex++)
-				rowObject[originalColumns[columnIndex].name] = row[columnIndex];
-			exportObjects.push(rowObject)
+	renderDialog() {
+		switch(this.state.currentDialog) {
+			case enums.DialogType.ExportDialog:
+				return (
+					<ExportDialog
+						filepath={exportPath}
+						onClose={() => this.setState({ currentDialog: undefined })}
+					/>
+				);
+			case enums.DialogType.FlagsDialog:
+				return (
+					<FlagsDialog
+						logFile={this.state.logFile}
+						initialRules={this.state.rules}
+						onClose={(newRules) => this.handleAnnotationDialogClose(newRules)}
+						onReturn={() => {}}
+					/>
+				);
+			case enums.DialogType.SelectDialog:
+				return (
+					<SelectColDialog
+						logFile={this.state.logFile}
+						comparisonFile={this.state.comparisonFile}
+						selectedColumns={this.state.selectedColumns}
+						onClose={(selectedColumns) =>
+							this.handleSelectDialog(selectedColumns)
+						}
+					/>
+				);
+			case enums.DialogType.StatesDialog:
+				return (
+					<StatesDialog
+						logFile={this.state.logFile}
+						initialRules={this.state.rules}
+						onClose={(newRules) => this.handleAnnotationDialogClose(newRules)}
+						onReturn={() => {}}
+					/>
+				);
+			case enums.DialogType.StructureDialog:
+				const selectedRows = this.primaryViewRef.current?.state.rowProperties.filter((r) => r.isSelected).map((r) => r.index) ?? [];
+				if (selectedRows.length === 0) {
+					this.vscode.postMessage({ type: "showErrorMessage", message: 'No rows selected'});
+					this.state = { ...this.state, currentDialog: undefined };
+					break;
+				}
+				return (
+					<div id="StructureDialog" style={{ display: "flex", position: "relative", boxSizing: "border-box" }}>
+						<StructureDialog
+							logFile={this.state.logFile}
+							comparisonLogFile={this.state.comparisonFile}
+							selectedRows={selectedRows}
+							
+							onClose={() => this.setState({currentDialog: undefined, currentSearchMatch: [], searchMatches: [], comparisonSearchMatches: []})}
+							onSearchResults={(searchMatches: number[][], comparisonSearchMatches: number[][]) => this.setState({ searchMatches, currentSearchMatch: searchMatches[0] , comparisonSearchMatches})}
+							onSearchHighlight={(match: number[]) => this.setState({currentSearchMatch: match})}
+						/>
+					</div>
+				);
 		}
-		this.vscode.postMessage({ type: "exportData", data: exportObjects });
+	}
+
+	renderHeaderButtons() {
+		return (
+			<>
+			<VSCodeButton
+				style={{ marginLeft: "5px", height: "25px", width: "125px" }}
+				onClick={() => this.setState({ currentDialog: enums.DialogType.SelectDialog })}
+			>
+				Choose Columns
+			</VSCodeButton>
+			<VSCodeButton
+				style={{ marginLeft: "5px", height: "25px", width: "110px" }}
+				onClick={() => this.exportData(this.state.searchMatches.flatMap((m) => m))}
+			>
+				Export
+			</VSCodeButton>
+			<VSCodeButton
+				style={{ marginLeft: "5px", height: "25px", width: "110px" }}
+				onClick={() => this.showCompareFileDialog()}
+			>
+				{this.state.comparisonFile ? 'End Comparison' : 'Compare'}
+			</VSCodeButton>
+			<div style={{ marginLeft: "5px", height: "25px"}}>
+				<TracyIconButton
+					tooltip="Create a structure from selected rows"
+					icon={IconType.ThreeBars}
+					onClick={() => this.setState({ currentDialog: enums.DialogType.StructureDialog })}
+				/>
+				<TracyIconButton
+					tooltip="Create/Modify Flag Annotations Columns"
+					icon={IconType.Tag}
+					onClick={() => this.setState({ currentDialog: enums.DialogType.FlagsDialog })}
+				/>
+				<TracyIconButton
+					tooltip="Create/Modify State-Based Annotation Columns"
+					icon={IconType.SettingsGear}
+					onClick={() => this.setState({ currentDialog: enums.DialogType.StatesDialog })}
+				/>
+				<TracyIconButton
+					tooltip="Toggle color mapping in logview"
+					icon={IconType.SymbolColor}
+					onClick={() => this.setState(({ coloredTable }) => ({ coloredTable: !coloredTable }))}
+				/>
+				{
+					this.state.logFile.dateTimeColumn() !== undefined && (
+						<TracyIconButton
+							tooltip="Set relative time starting point to selected row"
+							icon={IconType.Calendar}
+							onClick={() => this.handleSetRelativeTimeStartingPoint()}
+						/>
+					)
+				}
+				{
+					this.state.comparisonFile && (
+						<TracyIconButton
+							tooltip="Toggle syncronous scrolling"
+							icon={IconType.Link}
+							onClick={() => this.sideBySideAlignmentHandler.toggleSynchonizedScrolling()}
+						/>
+					)
+				}
+			</div>
+			</>
+		)
+	}
+
+	renderMinimapHeaders () {
+		if (this.state.comparisonFile) {
+			return (
+				<>
+				<MinimapHeader logFile={this.state.logFile} selectedColumns={this.state.selectedColumns} borderRight={false} />
+				<MinimapHeader logFile={this.state.comparisonFile} selectedColumns={this.state.selectedColumns} borderRight={true} />
+				</>
+			)
+		} else {
+			return (
+				<MinimapHeader logFile={this.state.logFile} selectedColumns={this.state.selectedColumns} borderRight={false} />
+			)
+		}
+	}
+
+	renderHeader() {
+		const { logFile, selectedColumns, showMinimapHeader } = this.state;
+		const minimapHeadersPrimary = getVisibleColumnsMinimap(logFile, selectedColumns);
+		const minimapWidthPrimary = minimapHeadersPrimary.length * constants.MINIMAP_COLUMN_WIDTH;
+		const headerHight = showMinimapHeader ? "100px" : "30px";
+
+		return (
+			<div
+				id="header"
+				style={{
+					display: "flex",
+					flexDirection: "row",
+					height: headerHight,
+					width: '100%',
+					boxSizing: "border-box",
+				}}
+			>
+				<div style={{ display: 'flex', width: `calc(50% - ${minimapWidthPrimary}px)` }}>
+					{
+						this.renderHeaderButtons()
+					}
+				</div>
+				{ this.state.showMinimapHeader && this.state.comparisonFile && this.renderMinimapHeaders() }
+				<div style={{ flex: 1, display: "flex", justifyContent: "end" }}>
+					<SearchBar
+						logFile={this.state.logFile}
+						comparisonLogFile={this.state.comparisonFile}
+						initialState={this.storedState?.search}
+						onClear={() => this.setState({ searchMatches: [], comparisonSearchMatches: undefined, filterSearch: false })}
+						onSearchResults={(filterSearch: boolean, primarySearchMatches: number[], comparisonSearchMatches?: number[]) => this.setState({ searchMatches: primarySearchMatches.map((m) => [m]), filterSearch, comparisonSearchMatches: comparisonSearchMatches?.map((m) => [m]), currentSearchMatch: [primarySearchMatches[0]] })}
+						onSearchHighlight={(resultIndex: number) => this.setState({currentSearchMatch: this.state.searchMatches[resultIndex]})}
+						onStateChanged={(state) => setVsState(this.vscode, { search: state })}
+					/>
+					<TracyIconButton
+						tooltip={this.state.showMinimapHeader ? "Hide minimap headers" : "Show minimap headers"}
+						icon={this.state.showMinimapHeader ? IconType.ArrowUp : IconType.ArrowDown}
+						onClick={() => this.setState(({ showMinimapHeader }) => ({ showMinimapHeader: !showMinimapHeader }))}
+					/>
+				</div>
+				
+				{ this.state.showMinimapHeader && !this.state.comparisonFile && this.renderMinimapHeaders() }
+			</div>
+		)
 	}
 
 	render() {
-		const minimapCounter = this.state.logFile.selectedColumnsMini.filter(Boolean).length;
-		const minimapWidth = Math.max(6, minimapCounter) * MINIMAP_COLUMN_WIDTH;
-		const minimapHeight = this.state.showMinimapHeader ? "12%" : "5%";
+		// logFile is initialized with an empty object
+		if (this.state.logFile.isEmpty()) {
+			return undefined;
+		}
 
-		const allColumns = [
-			"All",
-			...this.state.logFile.contentHeaders,
-			...this.state.rules.map((i) => i.column),
-		];
+		const headerHight = this.state.showMinimapHeader ? "100px" : "30px";
+
 		return (
 			<div
 				id="container"
@@ -484,315 +425,67 @@ export default class App extends React.Component<Props, State> {
 					boxSizing: "border-box",
 				}}
 			>
-				<div
-					id="header"
-					style={{
-						display: "flex",
-						flexDirection: "row",
-						height: minimapHeight,
-						boxSizing: "border-box",
-					}}
-				>
-					<div style={{ display: "flex" }}>
-						<VSCodeButton
-							style={{ marginLeft: "5px", height: "25px", width: "125px" }}
-							onClick={() => this.setState({ showSelectDialog: true })}
-						>
-							Choose Columns
-						</VSCodeButton>
-						<VSCodeButton
-							style={{ marginLeft: "5px", height: "25px", width: "110px" }}
-							onClick={() => this.exportData(this.state.searchMatches, false)}
-						>
-							Export
-						</VSCodeButton>
-					</div>
-					<div style={{ flex: 1, display: "flex", justifyContent: "end" }}>
-						<VSCodeDropdown
-							key="searchDropdown"
-							value={searchColumn}
-							style={{ marginRight: "5px" }}
-							onChange={(e) => { searchColumn = e.target.value; this.updateSearchField(); }}
-						>
-							{allColumns.map((col, col_i) => (
-								<VSCodeOption key={col_i} value={col}>
-									{col}
-								</VSCodeOption>
-							))}
-						</VSCodeDropdown>
-						<VSCodeTextField
-							key="searchTextField"
-							style={{ marginRight: "5px" }}
-							placeholder="Search Text"
-							value={searchText}
-							onInput={(e) => { searchText = e.target.value; this.updateSearchField(); }}
-							autofocus
-						>
-							<Tooltip title={<h3>Match Case</h3>} placement="bottom" arrow>
-								<span
-									slot="end"
-									style={{
-										backgroundColor: this.state.caseSearch ? "dodgerblue" : "",
-										borderRadius: "20%",
-										marginRight: "5px",
-										cursor: "pointer",
-									}}
-									className="codicon codicon-case-sensitive"
-									onClick={() => this.switchBooleanState("caseSearch")}
-								></span>
-							</Tooltip>
-							<Tooltip title={<h3>Match Whole Word</h3>} placement="bottom" arrow>
-								<span
-									slot="end"
-									style={{
-										backgroundColor: this.state.wholeSearch ? "dodgerblue" : "",
-										borderRadius: "20%",
-										marginRight: "5px",
-										cursor: "pointer",
-									}}
-									className="codicon codicon-whole-word"
-									onClick={() => this.switchBooleanState("wholeSearch")}
-								></span>
-							</Tooltip>
-							<Tooltip title={<h3>Use Regular Expression</h3>} placement="bottom" arrow>
-								<span
-									slot="end"
-									style={{
-										backgroundColor: this.state.reSearch ? "dodgerblue" : "",
-										borderRadius: "20%",
-										marginRight: "5px",
-										cursor: "pointer",
-									}}
-									className="codicon codicon-regex"
-									onClick={() => this.switchBooleanState("reSearch")}
-								></span>
-							</Tooltip>
-							<Tooltip title={<h3>Clear</h3>} placement="bottom" arrow>
-								<span
-									slot="end"
-									style={{ cursor: "pointer" }}
-									className="codicon codicon-close"
-									onClick={() => this.clearSearchField()}
-								></span>
-							</Tooltip>
-						</VSCodeTextField>
-						{" "}
-						{this.state.searchMatches.length === 0
-							? "No Results"
-							: `${this.state.currentSearchMatchIndex! + 1} of ${this.state.searchMatches.length}`
-						}
-						<VSCodeButton
-							className="structure-result-element"
-							appearance="icon"
-							disabled={this.state.searchMatches.length < 2}
-							onClick={() => this.handleNavigation(false, false)}
-						>
-							<i className="codicon codicon-chevron-up" />
-						</VSCodeButton>
-						<VSCodeButton
-							className="structure-result-element"
-							appearance="icon"
-							disabled={this.state.searchMatches.length < 2}
-							onClick={() => this.handleNavigation(true, false)}
-						>
-							<i className="codicon codicon-chevron-down" />
-						</VSCodeButton>
-						{this.state.filterSearch && (
-							<VSCodeButton
-								className="structure-result-element"
-								appearance="icon"
-								disabled={this.state.searchMatches.length < 1}
-								onClick={() => { this.updateVisibleSearchMatches(this.state.searchMatches, false); }}
-							>
-								<i className="codicon codicon-filter-filled" />
-							</VSCodeButton>
-						)}
-						{!this.state.filterSearch && (
-							<VSCodeButton
-								className="structure-result-element"
-								appearance="icon"
-								disabled={this.state.searchMatches.length < 1}
-								onClick={() => { this.updateVisibleSearchMatches(this.state.searchMatches, true); }}
-							>
-								<i className="codicon codicon-filter" />
-							</VSCodeButton>
-						)}
-						{this.state.showMinimapHeader && (
-							<VSCodeButton
-								appearance="icon"
-								onClick={() => this.setState({ showMinimapHeader: false })}
-							>
-								<i className="codicon codicon-arrow-down" />
-							</VSCodeButton>
-						)}
-						{!this.state.showMinimapHeader && (
-							<VSCodeButton
-								appearance="icon"
-								onClick={() => this.setState({ showMinimapHeader: true })}
-							>
-								<i className="codicon codicon-arrow-up" />
-							</VSCodeButton>
-						)}
-					</div>
-					{!this.state.showMinimapHeader && (
-						<div className="header-background" style={{ width: minimapWidth }}></div>
-					)}
-					{this.state.showMinimapHeader && (
-						<div
-							className="header-background"
-							style={{ width: minimapWidth, ...COLUMN_2_HEADER_STYLE }}
-						>
-							<MinimapHeader logFile={this.state.logFile} />
-						</div>
-					)}
-				</div>
+				{
+					this.renderHeader()
+				}
 				<div
 					id="LogViewAndMinimap"
 					style={{
 						display: "flex",
 						flexDirection: "row",
-						height: `calc(100% - ${minimapHeight})`,
+						height: `calc(100% - ${headerHight})`,
 						overflow: "auto",
 						boxSizing: "border-box",
 					}}
 				>
-					<div style={{ flex: 1, display: "flex" }}>
-						<LogView
+					<div style={{ display: 'flex', width: `${this.state.comparisonFile ? 50 : 100}%` }}>
+						<LogViewAndMinimap
+							ref={this.primaryViewRef}
 							logFile={this.state.logFile}
-							previousSessionLogView={this.previousSession?.logViewState}
-							onLogViewStateChanged={(logViewState) => this.setState({ logViewState })}
-							forwardRef={this.child}
-							filterSearch={this.state.filterSearch}
+							initialLogViewState={this.storedState?.primaryView}
+							onLogViewStateChanged={this.handlePrimaryLogViewStateChange}
+							onMinimapVisibleItemsChanged={this.sideBySideAlignmentHandler.handlePrimaryMinimapScaleChange}
+							onRequestColors={this.colorMappingHandler.getPrimaryColors}
+						
+							// UI settings
 							coloredTable={this.state.coloredTable}
-							rowProperties={this.state.rowProperties}
-							structureMatches={this.state.structureMatches}
-							currentStructureMatch={this.state.currentStructureMatch}
+							selectedColumns={this.state.selectedColumns}
+							alignMinimap="right"
+						
+							// Search related
+							searchMatches={this.state.searchMatches}
+							filterSearch={this.state.filterSearch}
 							currentSearchMatch={this.state.currentSearchMatch}
-							onSelectedRowsChanged={(index, e) => this.handleSelectedLogRow(index, e)}
-							onRowPropsChanged={(index, isRendered) => this.handleRowCollapse(index, isRendered)}
-							collapsibleRows={this.state.collapsibleRows}
-							clearSegmentation={() => this.updateSegmentation({})}
 						/>
 					</div>
-					<div
-						style={{
-							display: "flex",
-							flexDirection: "column",
-							width: minimapWidth,
-							boxSizing: "border-box",
-						}}
-					>
-						<div className="header-background" style={COLUMN_0_HEADER_STYLE}>
-							<Tooltip
-								title={<h3>Create a structure from selected rows</h3>}
-								placement="bottom"
-								arrow
-							>
-								<VSCodeButton
-									appearance="icon"
-									onClick={() => this.handleStructureDialog(false)}
-								>
-									<i className="codicon codicon-three-bars" />
-								</VSCodeButton>
-							</Tooltip>
-							<Tooltip
-								title={<h3>Create/Modify Flag Annotations Columns</h3>}
-								placement="bottom"
-								arrow
-							>
-								<VSCodeButton
-									appearance="icon"
-									onClick={() => this.setState({ showFlagsDialog: true })}
-								>
-									<i className="codicon codicon-tag" />
-								</VSCodeButton>
-							</Tooltip>
-							<Tooltip
-								title={<h3>Create/Modify State-Based Annotation Columns</h3>}
-								placement="bottom"
-								arrow
-							>
-								<VSCodeButton
-									appearance="icon"
-									onClick={() => this.setState({ showStatesDialog: true })}
-								>
-									<i className="codicon codicon-settings-gear" />
-								</VSCodeButton>
-							</Tooltip>
-							<VSCodeButton
-								appearance="icon"
-								onClick={() => this.switchBooleanState("coloredTable")}
-							>
-								<i className="codicon codicon-symbol-color" />
-							</VSCodeButton>
-						</div>
-						{this.state.logViewState && (
-							<MinimapView
-								logFile={this.state.logFile}
-								logViewState={this.state.logViewState}
-								onLogViewStateChanged={(logViewState) => this.setState({ logViewState })}
-								forwardRef={this.child}
-								rowProperties={this.state.rowProperties}
-							/>
-						)}
-					</div>
-					{this.state.showExportDialog && (
-						<ExportDialog
-							filepath={exportPath}
-							onClose={() => this.setState({ showExportDialog: false })}
-						/>
-					)}
-					{this.state.showStatesDialog && (
-						<StatesDialog
-							logFile={this.state.logFile}
-							initialRules={this.state.rules}
-							onClose={(newRules) => this.handleAnnotationDialog(newRules, true)}
-							onReturn={(newRules) => this.handleAnnotationDialog(newRules, false)}
-						/>
-					)}
-					{this.state.showFlagsDialog && (
-						<FlagsDialog
-							logFile={this.state.logFile}
-							initialRules={this.state.rules}
-							onClose={(newRules) => this.handleAnnotationDialog(newRules, true)}
-							onReturn={(newRules) => this.handleAnnotationDialog(newRules, false)}
-						/>
-					)}
-					{this.state.showSelectDialog && (
-						<SelectColDialog
-							logFile={this.state.logFile}
-							onClose={(selectedColumns, selectedColumnsMini) =>
-								this.handleSelectDialog(selectedColumns, selectedColumnsMini, true)
-							}
-						/>
-					)}
+					{
+						this.state.comparisonFile && (
+							<div style={{ display: 'flex', width: '50%' }}>
+								<LogViewAndMinimap
+									ref={this.comparisonViewRef}
+									logFile={this.state.comparisonFile}
+									initialLogViewState={this.storedState?.comparisonView}
+									onLogViewStateChanged={this.handleComparisonLogViewStateChange}
+									onMinimapVisibleItemsChanged={this.sideBySideAlignmentHandler.handleComparisonMinimapScaleChange}
+									onRequestColors={this.colorMappingHandler.getComparisonColors}
+								
+									// UI settings
+									coloredTable={this.state.coloredTable}
+									selectedColumns={this.state.selectedColumns}
+									alignMinimap="left"
+								
+									// Search related
+									searchMatches={this.state.comparisonSearchMatches ?? []}
+									filterSearch={this.state.filterSearch}
+									currentSearchMatch={this.state.currentSearchMatch}
+								/>
+							</div>
+						)
+					}
 				</div>
-				<div
-					id="StructureDialog"
-					style={{ display: "flex", position: "relative", boxSizing: "border-box" }}
-				>
-					{this.state.showStructureDialog && (
-						<StructureDialog
-							logHeaderColumns={this.state.logFile.headers}
-							logHeaderColumnsTypes={logHeaderColumnTypes}
-							logSelectedRows={this.state.selectedLogRows}
-							logFileAsString={this.state.logFileAsString}
-							logEntryCharIndexMaps={this.state.logEntryCharIndexMaps}
-							collapsibleRows={this.state.collapsibleRows}
-							loadedStructureDefinition={this.state.loadedStructureDefinition}
-							currentStructureMatchIndex={this.state.currentStructureMatchIndex}
-							numberOfMatches={this.state.structureMatches.length}
-							onClose={() => this.handleStructureDialog(true)}
-							onStructureUpdate={() => this.handleStructureUpdate(false)}
-							onMatchStructure={(expression) => this.handleStructureMatching(expression)}
-							onNavigateStructureMatches={(isGoingForward) => this.handleNavigation(isGoingForward, true)}
-							onStructureDefinitionSave={(structureDefinitionString) => this.handleSavingStuctureDefinition(structureDefinitionString)}
-							onStructureDefinitionLoad={() => {this.handleLoadingStructureDefinition()}}
-							onDefineSegment={(collapsibleRows) => this.updateSegmentation(collapsibleRows)}
-							onExportStructureMatches={() => this.exportData(this.state.structureMatches.flat(1), true)} 
-						/>
-					)}
-				</div>
+				{
+					this.renderDialog()
+				}
 			</div>
 		);
 	}

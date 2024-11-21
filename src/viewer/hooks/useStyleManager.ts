@@ -1,27 +1,13 @@
-import {
-	SelectedRowType,
-	LOG_HEADER_HEIGHT,
-	LOG_ROW_HEIGHT,
-	STRUCTURE_LINK_HEIGHT,
-	STRUCTURE_WIDTH,
-	BORDER,
-	BORDER_SELECTED_ROW,
-	BORDER_STRUCTURE_MATCH_CURRENT,
-	BORDER_STRUCTURE_MATCH_OTHER,
-	BACKGROUND_COLOR_MATCHED_ROW_CURRENT,
-	BACKGROUND_COLOR_MATCHED_ROW_OTHER,
-	BACKGROUND_COLOR_SELECTED_ROW,
-	BACKGROUND_COLOR_SEARCH_ROW,
-} from "../constants";
-import { RowProperty, StructureEntry } from "../types";
+import { constants } from "../constants";
+import { RowProperty, StructureEntry } from "../interfaces";
 
-const getLogViewRowStyle = (rowIndex: number, leftPadding: number): React.CSSProperties => {
+const getLogViewRowStyle = (viewIndex: number, leftPadding: number): React.CSSProperties => {
 	const rowStyle: React.CSSProperties = {
 		left: leftPadding,
 		position: "absolute",
-		height: LOG_ROW_HEIGHT,
+		height: constants.LOG_ROW_HEIGHT,
 		overflow: "hidden",
-		top: rowIndex * LOG_ROW_HEIGHT,
+		top: viewIndex * constants.LOG_ROW_HEIGHT,
 		userSelect: "text",
 		borderRadius: "5px",
 	};
@@ -56,10 +42,10 @@ export const wildcardStyle: React.CSSProperties = {
 export const getStructureTableHeaderStyle = (containerWidth: number): React.CSSProperties => {
 	const headerStyle: React.CSSProperties = {
 		width: containerWidth,
-		height: LOG_HEADER_HEIGHT,
+		height: constants.LOG_HEADER_HEIGHT,
 		position: "relative",
 		userSelect: "none",
-		left: STRUCTURE_WIDTH,
+		left: constants.STRUCTURE_WIDTH,
 		display: "flex",
 	};
 
@@ -68,7 +54,6 @@ export const getStructureTableHeaderStyle = (containerWidth: number): React.CSSP
 
 export const getHeaderColumnStyle = (
 	columnWidth: number,
-	columnIndex: number,
 	height: number,
 ): React.CSSProperties => {
 	const headerColumnStyle: React.CSSProperties = {
@@ -99,7 +84,7 @@ export const getSegmentStyle = (columnWidth: number, height: number): React.CSSP
 export const getSegmentRowStyle = (segmentWidth: number, top: number): React.CSSProperties => {
 	const segmentRowStyle: React.CSSProperties = {
 		position: "absolute",
-		height: LOG_ROW_HEIGHT,
+		height: constants.LOG_ROW_HEIGHT,
 		top: top,
 		width: segmentWidth,
 	}
@@ -115,7 +100,7 @@ export const getHeaderColumnInnerStyle = (
 		alignItems: "center",
 		justifyContent: isHeader ? "center" : "left",
 		paddingLeft: "2px",
-		borderRight: BORDER,
+		borderRight: constants.BORDER,
 	};
 
 	return headerColumnInnerStyle;
@@ -125,12 +110,12 @@ export const getStructureTableEntryIconStyle = (
 	isRemovingStructureEntries: boolean,
 ): React.CSSProperties => {
 	const structureEntryIconStyle: React.CSSProperties = {
-		width: STRUCTURE_WIDTH,
-		height: LOG_ROW_HEIGHT,
+		width: constants.STRUCTURE_WIDTH,
+		height: constants.LOG_ROW_HEIGHT,
 		display: "inline-block",
 		verticalAlign: "top",
 		textAlign: "center",
-		lineHeight: `${LOG_ROW_HEIGHT}px`,
+		lineHeight: `${constants.LOG_ROW_HEIGHT}px`,
 		color: isRemovingStructureEntries ? "red" : "",
 	};
 
@@ -143,8 +128,8 @@ export const getStructureTableRowStyle = (
 ): React.CSSProperties => {
 	const rowStyle: React.CSSProperties = {
 		position: "absolute",
-		height: LOG_ROW_HEIGHT,
-		top: rowIndex * LOG_ROW_HEIGHT + structureLinkIndex * STRUCTURE_LINK_HEIGHT,
+		height: constants.LOG_ROW_HEIGHT,
+		top: rowIndex * constants.LOG_ROW_HEIGHT + structureLinkIndex * constants.STRUCTURE_LINK_HEIGHT,
 		overflow: "hidden",
 	};
 
@@ -157,11 +142,11 @@ export const getStructureTableLinkStyle = (
 ): React.CSSProperties => {
 	const structureLinkStyle: React.CSSProperties = {
 		position: "absolute",
-		height: STRUCTURE_LINK_HEIGHT,
-		top: (rowIndex + 1) * LOG_ROW_HEIGHT + structureLinkIndex * STRUCTURE_LINK_HEIGHT,
+		height: constants.STRUCTURE_LINK_HEIGHT,
+		top: (rowIndex + 1) * constants.LOG_ROW_HEIGHT + structureLinkIndex * constants.STRUCTURE_LINK_HEIGHT,
 		overflow: "hidden",
 		userSelect: "none",
-		width: STRUCTURE_WIDTH,
+		width: constants.STRUCTURE_WIDTH,
 		textAlign: "center",
 	};
 
@@ -176,12 +161,12 @@ export const getStructureTableColumnStyle = (
 		overflow: "hidden",
 		whiteSpace: "nowrap",
 		display: "inline-block",
-		height: LOG_ROW_HEIGHT,
+		height: constants.LOG_ROW_HEIGHT,
 		width: columnWidth,
 		verticalAlign: "top",
-		borderLeft: columnIndex !== 0 ? BORDER : "",
-		borderTop: BORDER,
-		borderBottom: BORDER,
+		borderLeft: columnIndex !== 0 ? constants.BORDER : "",
+		borderTop: constants.BORDER,
+		borderBottom: constants.BORDER,
 	};
 
 	return columnStyle;
@@ -197,7 +182,7 @@ export const getStructureTableCellSelectionStyle = (
 	if (!structureEntries[rowIndex].cellSelection[cellIndex]) {
 		cellSelectionStyle = {
 			display: "flex",
-			height: LOG_ROW_HEIGHT,
+			height: constants.LOG_ROW_HEIGHT,
 			alignItems: "center",
 			justifyContent: "left",
 			paddingLeft: "2px",
@@ -209,7 +194,7 @@ export const getStructureTableCellSelectionStyle = (
 	} else {
 		cellSelectionStyle = {
 			display: "flex",
-			height: LOG_ROW_HEIGHT,
+			height: constants.LOG_ROW_HEIGHT,
 			alignItems: "center",
 			justifyContent: "left",
 			paddingLeft: "2px",
@@ -222,34 +207,29 @@ export const getStructureTableCellSelectionStyle = (
 };
 
 export const getLogViewRowSelectionStyle = (
-	selectedRows: RowProperty[],
-	rowIndex: number,
-	index: number,
-	left: number,
+	rowProperties: RowProperty,
+	viewIndex: number
 ): React.CSSProperties => {
 	let rowSelectionStyle: React.CSSProperties = {};
 
-	switch (selectedRows[rowIndex].rowType) {
-		case SelectedRowType.UserSelect:
-			rowSelectionStyle = {
-				borderBottom: BORDER_SELECTED_ROW,
-				borderTop: BORDER_SELECTED_ROW,
-				backgroundColor: BACKGROUND_COLOR_SELECTED_ROW,
-			};
-			break;
-			case SelectedRowType.SearchResult:
-				rowSelectionStyle = {
-					backgroundColor: BACKGROUND_COLOR_SEARCH_ROW,
-				};
-				break;
-		case SelectedRowType.None:
-			rowSelectionStyle = {
-				borderBottom: BORDER,
-			};
-			break;
+	// Row selection has priority over search results
+	if (rowProperties.isSelected) {
+		rowSelectionStyle = {
+			borderBottom: constants.BORDER_SELECTED_ROW,
+			borderTop: constants.BORDER_SELECTED_ROW,
+			backgroundColor: constants.BACKGROUND_COLOR_SELECTED_ROW,
+		};
+	} else if (rowProperties.isQueried) {
+		rowSelectionStyle = {
+			backgroundColor: rowProperties.isHighlighted ? constants.BACKGROUND_COLOR_SEARCH_HIGHLIGHTED_ROW : constants.BACKGROUND_COLOR_SEARCH_ROW,
+		};
+	} else {
+		rowSelectionStyle = {
+			borderBottom: constants.BORDER,
+		};
 	}
 
-	rowSelectionStyle = { ...getLogViewRowStyle(index, left), ...rowSelectionStyle };
+	rowSelectionStyle = { ...getLogViewRowStyle(viewIndex, 0), ...rowSelectionStyle };
 
 	return rowSelectionStyle;
 };
@@ -265,30 +245,30 @@ export const getLogViewStructureMatchStyle = (
 	const currentStructureMatchLastIndex = currentStructureMatch.length - 1;
 
 	const structureMatchFirstAndLastRowStyle = {
-		borderTop: isCurrentMatch ? BORDER_STRUCTURE_MATCH_CURRENT : BORDER_STRUCTURE_MATCH_OTHER,
-		borderBottom: isCurrentMatch ? BORDER_STRUCTURE_MATCH_CURRENT : BORDER_STRUCTURE_MATCH_OTHER,
+		borderTop: isCurrentMatch ? constants.BORDER_STRUCTURE_MATCH_CURRENT : constants.BORDER_STRUCTURE_MATCH_OTHER,
+		borderBottom: isCurrentMatch ? constants.BORDER_STRUCTURE_MATCH_CURRENT : constants.BORDER_STRUCTURE_MATCH_OTHER,
 		backgroundColor: isCurrentMatch
-			? BACKGROUND_COLOR_MATCHED_ROW_CURRENT
-			: BACKGROUND_COLOR_MATCHED_ROW_OTHER,
+			? constants.BACKGROUND_COLOR_MATCHED_ROW_CURRENT
+			: constants.BACKGROUND_COLOR_MATCHED_ROW_OTHER,
 	};
 	const structureMatchFirstRowStyle = {
-		borderTop: isCurrentMatch ? BORDER_STRUCTURE_MATCH_CURRENT : BORDER_STRUCTURE_MATCH_OTHER,
-		borderBottom: BORDER,
+		borderTop: isCurrentMatch ? constants.BORDER_STRUCTURE_MATCH_CURRENT : constants.BORDER_STRUCTURE_MATCH_OTHER,
+		borderBottom: constants.BORDER,
 		backgroundColor: isCurrentMatch
-			? BACKGROUND_COLOR_MATCHED_ROW_CURRENT
-			: BACKGROUND_COLOR_MATCHED_ROW_OTHER,
+			? constants.BACKGROUND_COLOR_MATCHED_ROW_CURRENT
+			: constants.BACKGROUND_COLOR_MATCHED_ROW_OTHER,
 	};
 	const structureMatchMiddleRowStyle = {
 		backgroundColor: isCurrentMatch
-			? BACKGROUND_COLOR_MATCHED_ROW_CURRENT
-			: BACKGROUND_COLOR_MATCHED_ROW_OTHER,
-		borderBottom: BORDER,
+			? constants.BACKGROUND_COLOR_MATCHED_ROW_CURRENT
+			: constants.BACKGROUND_COLOR_MATCHED_ROW_OTHER,
+		borderBottom: constants.BORDER,
 	};
 	const structureMatchLastRowStyle = {
-		borderBottom: isCurrentMatch ? BORDER_STRUCTURE_MATCH_CURRENT : BORDER_STRUCTURE_MATCH_OTHER,
+		borderBottom: isCurrentMatch ? constants.BORDER_STRUCTURE_MATCH_CURRENT : constants.BORDER_STRUCTURE_MATCH_OTHER,
 		backgroundColor: isCurrentMatch
-			? BACKGROUND_COLOR_MATCHED_ROW_CURRENT
-			: BACKGROUND_COLOR_MATCHED_ROW_OTHER,
+			? constants.BACKGROUND_COLOR_MATCHED_ROW_CURRENT
+			: constants.BACKGROUND_COLOR_MATCHED_ROW_OTHER,
 	};
 
 	if (rowIndex === currentStructureMatch[0] && currentStructureMatch.length === 1) {

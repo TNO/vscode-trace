@@ -15,7 +15,7 @@
     "Other"
   ],
   "activationEvents": [
-    "onCustomEditor:tno.tracy"
+    "onStartupFinished"
   ],
   "main": "./out/extension/extension.js",
   "contributes": {
@@ -25,9 +25,16 @@
         "displayName": "Tracy",
         "selector": [
           {
-            "filenamePattern": "*.tracy.json"
+            "filenamePattern": "*"
           }
-        ]
+        ],
+        "priority": "option"
+      }
+    ],
+    "commands": [
+      {
+        "command": "tracy.openDocument",
+        "title": "Tracy: open current document with Tracy"
       }
     ]
   },
@@ -40,6 +47,9 @@
     "watch-viewer": "webpack --mode=development --env development --progress --watch"
   },
   "devDependencies": {
+    "@types/d3-array": "^3.2.1",
+    "@types/d3-scale": "^4.0.8",
+    "@types/d3-scale-chromatic": "^3.0.3",
     "@types/node": "^16.11.7",
     "@types/react": "^18.0.27",
     "@types/react-dom": "^18.0.10",

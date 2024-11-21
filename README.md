@@ -8,7 +8,7 @@ Tracy is a Visual Studio Code extension for the analysis of logs. It is meant as
 </div>
 
 ## Installation
-To install Tracy in Visual Studio Code:
+To install Tracy in Visual Studio Code: test
 1. Obtain the plugin `.vsix` file:
     - If you want to install the latest release, go to the [Latest release](https://github.com/TNO/vscode-tracy/releases/latest) and download the `vscode-tracy-X.X.X.vsix` file under *Assests*.
     - If you want to install a specific commit, click on the :heavy_check_mark: next to the commit -> *Details* -> *Summary* -> under *Artifacts*, *vscode-vsix* and extract the downloaded `vscode-vsix.zip`.
@@ -43,6 +43,15 @@ Tracy is designed to process log files represented in JSON format. The input log
 A prominent feature is the minimap, which allows navigation and analysis of a log by representing information in the form of glyphs (colored rectangles). In the minimap, each column of the log is represented as a column of glyphs. Every value in the log column maps to a glyph, in such a way that different values map to different colors. For timestamp values, nearby timestamps map to nearby colors, so that a gradual progress of time shows as a smooth gradient in the first minimap column.
 
 The minimap can be scaled (zoomed out and in) by holding the Control key and at the same time turning the mouse wheel, while the pointer is positioned over the minimap. The lines (rows) of the log that are visible, are indicated by a shaded area in the minimap. Scrolling the log is done with the scroll bar immediately to the left of the minimap, or by using the mouse wheel while the pointer is positioned over the log.
+
+### Side by side comparison
+
+**Comparing files:** 
+     Open first file using the instructions above, then click the compare button and select the second file. To toggle synchronous scrolling, click the link button in the menu bar.
+
+The feature allows comparison of two log files in one view including their minimaps. The initial log file is located on the left side and the second log file is located on the right side of the window with their minimaps being in the middle. The files have synchronized scrolling, which can be also toggled off. In case the scroll is synchronized and one file is shorter, you can still scroll the other one.
+
+Copyright 2024 ASML Netherlands B.V
 
 ## User and Developer Documentation
 For more information, check the [Tracy user and developer documentation](https://tno.github.io/vscode-tracy/).

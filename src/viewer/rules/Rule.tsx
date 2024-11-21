@@ -1,4 +1,6 @@
-import LogFile from "../LogFile";
+import { CustomColumn } from "../interfaces";
+import CachingColumn from "../lib/columns/CachingColumn";
+import LogFile from "../lib/LogFile";
 
 export default abstract class Rule {
 	readonly column: string;
@@ -9,6 +11,7 @@ export default abstract class Rule {
 	constructor(column: string, description: string) {
 		this.column = column;
 		this.description = description;
+		this.computeValues = this.computeValues.bind(this);
 	}
 
 	abstract reset(): Rule;
@@ -30,5 +33,12 @@ export default abstract class Rule {
 			FlagRule: require("./FlagRule").default,
 		};
 		return lookup[json.type]?.fromJSON(json);
+	}
+
+	toCustomColumn(): CustomColumn<string> {
+		return new CachingColumn<string>(
+			this.column,
+			this.computeValues
+		);
 	}
 }
