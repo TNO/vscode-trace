@@ -1,6 +1,6 @@
-import { CellContents, Header, LogEntryCharMaps, StructureEntry, Wildcard } from "../types";
-import { StructureHeaderColumnType, StructureLinkDistance } from "../constants";
+import { CellContents, LogEntryCharMaps, StructureEntry, Wildcard } from "../interfaces";
 import { isSubstitutionFirstForWildcard } from "./useWildcardManager";
+import { enums } from "../enums";
 
 const regExpAnyCharMin = ".+?";
 const regExpAnyCharMax = ".+";
@@ -47,14 +47,14 @@ const getCellValue = (
     content: CellContents[],
     rowIndex: number,
     cellIndex: number,
-    header: Header,
-    headerColumnType: StructureHeaderColumnType,
+    header: string,
+    headerColumnType: enums.StructureHeaderColumnType,
     isSelected: boolean,
     wildcards: Wildcard[],
 ): string => {
     let value: string;
 
-    if (isSelected && headerColumnType !== StructureHeaderColumnType.Custom) {
+    if (isSelected && headerColumnType !== enums.StructureHeaderColumnType.Custom) {
         if (content[0].textValue == null) value = "null";
         else {
             const valueParts: string[] = [];
@@ -82,7 +82,7 @@ const getCellValue = (
         }
     } else {
         value =
-            header.name.toLowerCase() === "timestamp"
+            header.toLowerCase() === "timestamp"
                 ? `"${regExpTimeStampPattern}"`
                 : `"${regExpValuePattern}"`;
     }
@@ -91,8 +91,8 @@ const getCellValue = (
 };
 
 const getRegExpForLogEntry = (
-    logHeaders: Header[],
-    headerTypes: StructureHeaderColumnType[],
+    logHeaders: string[],
+    headerTypes: enums.StructureHeaderColumnType[],
     row: CellContents[][],
     rowIndex: number,
     cellSelection: boolean[],
@@ -104,12 +104,12 @@ const getRegExpForLogEntry = (
 
     for (let c = logHeaders.length - 1; c >= 0; c--) {
 
-        const headerString = getHeaderValue(logHeaders[c].name);
+        const headerString = getHeaderValue(logHeaders[c]);
 
         const headerType = headerTypes[c];
         const isCellSelected = cellSelection[c];
 
-        if (headerType !== StructureHeaderColumnType.Custom && row[c] !== undefined) {
+        if (headerType !== enums.StructureHeaderColumnType.Custom && row[c] !== undefined) {
             let valueString = getCellValue(
                 row[c],
                 rowIndex,
@@ -150,8 +150,8 @@ const getRegExpForLogEntry = (
 };
 
 export const useStructureQueryConstructor = (
-    logHeaders: Header[],
-    headerColumnTypes: StructureHeaderColumnType[],
+    logHeaders: string[],
+    headerColumnTypes: enums.StructureHeaderColumnType[],
     structureEntries: StructureEntry[],
     wildcards: Wildcard[],
 ): string => {
@@ -174,13 +174,13 @@ export const useStructureQueryConstructor = (
             let structureLinkRegExp = "";
 
             switch (structureEntry.structureLink) {
-                case StructureLinkDistance.None:
+                case enums.StructureLinkDistance.None:
                     structureLinkRegExp = getRegExpExactWhiteSpace(2);
                     break;
-                case StructureLinkDistance.Min:
+                case enums.StructureLinkDistance.Min:
                     structureLinkRegExp = regExpAnyCharMin;
                     break;
-                case StructureLinkDistance.Max:
+                case enums.StructureLinkDistance.Max:
                     structureLinkRegExp = regExpAnyCharMax;
                     break;
             }

@@ -3,3 +3,4 @@ out/
 workspace/
 *.vsix
 examples/*.tracy.json
+!log/

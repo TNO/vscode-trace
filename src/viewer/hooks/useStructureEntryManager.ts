@@ -1,9 +1,11 @@
-import { StructureHeaderColumnType, StructureLinkDistance } from "../constants";
-import { StructureEntry, Wildcard } from "../types";
+import { enums } from "../enums";
+import { StructureEntry, Wildcard } from "../interfaces";
+import { types } from "../types";
+import { logDataToString } from "./useTracyLogData";
 
 export const constructStructureEntriesArray = (
-	headerColumnTypes: StructureHeaderColumnType[],
-	selectedRows: string[][],
+	headerColumnTypes: enums.StructureHeaderColumnType[],
+	selectedRows: types.TracyLogData[][],
 ): StructureEntry[] => {
 	const structureEntries: StructureEntry[] = [];
 	let structureEntry: StructureEntry;
@@ -17,21 +19,21 @@ export const constructStructureEntriesArray = (
 };
 
 export const constructNewStructureEntry = (
-	headerColumnType: StructureHeaderColumnType[],
-	row: string[],
+	headerColumnType: enums.StructureHeaderColumnType[],
+	row: types.TracyLogData[],
 ): StructureEntry => {
 	const rowCellContents = row.map((v, _i) => {
-		return [{ contentsIndex: 0, textValue: v, wildcardIndex: null }];
+		return [{ contentsIndex: 0, textValue: logDataToString(v), wildcardIndex: null }];
 	});
 
 	const allCellsSelected = row.map((_v, i) => {
-		if (headerColumnType[i] === StructureHeaderColumnType.Selected) {
+		if (headerColumnType[i] === enums.StructureHeaderColumnType.Selected) {
 			return true;
 		}
 		return false;
 	});
 
-	const defaultStructureLink = StructureLinkDistance.Min;
+	const defaultStructureLink = enums.StructureLinkDistance.Min;
 
 	const arraysForWilcardIndexes: number[][] = [];
 	row.map(() => {
@@ -55,7 +57,7 @@ export const appendNewStructureEntries = (
 	const lastIndexOfStructureEntry = currentStructureEntries.length - 1;
 	let modifiedStructureEntries: StructureEntry[] = currentStructureEntries;
 
-	modifiedStructureEntries[lastIndexOfStructureEntry].structureLink = StructureLinkDistance.Min;
+	modifiedStructureEntries[lastIndexOfStructureEntry].structureLink = enums.StructureLinkDistance.Min;
 
 	newStructureEntries.forEach((newEntry) => {
 		modifiedStructureEntries.push(newEntry);
@@ -122,14 +124,14 @@ export const toggleStructureLink = (
 	let structureLink = modifiedStructureEntries[structureEntryIndex].structureLink;
 
 	switch (structureLink) {
-		case StructureLinkDistance.None:
-			structureLink = StructureLinkDistance.Min;
+		case enums.StructureLinkDistance.None:
+			structureLink = enums.StructureLinkDistance.Min;
 			break;
-		case StructureLinkDistance.Min:
-			structureLink = StructureLinkDistance.Max;
+		case enums.StructureLinkDistance.Min:
+			structureLink = enums.StructureLinkDistance.Max;
 			break;
-		case StructureLinkDistance.Max:
-			structureLink = StructureLinkDistance.None;
+		case enums.StructureLinkDistance.Max:
+			structureLink = enums.StructureLinkDistance.None;
 			break;
 	}
 
@@ -139,7 +141,7 @@ export const toggleStructureLink = (
 };
 
 export const toggleCellSelection = (
-	headerColumnType: StructureHeaderColumnType[],
+	headerColumnType: enums.StructureHeaderColumnType[],
 	structureEntries: StructureEntry[],
 	structureEntryIndex: number,
 	cellIndex: number,
@@ -148,14 +150,14 @@ export const toggleCellSelection = (
 	const modifiedStructureEntries = structureEntries;
 	let selectedCell = modifiedStructureEntries[structureEntryIndex].cellSelection[cellIndex];
 
-	if (headerColumnType[cellIndex] !== StructureHeaderColumnType.Custom) {
+	if (headerColumnType[cellIndex] !== enums.StructureHeaderColumnType.Custom) {
 		modifiedStructureEntries[structureEntryIndex].cellSelection[cellIndex] = !selectedCell;
 		selectedCell = modifiedStructureEntries[structureEntryIndex].cellSelection[cellIndex];
 
 		if (isShiftPressed) {
 			//toggle the selection of all the other cells
 			modifiedStructureEntries[structureEntryIndex].cellSelection.forEach((cell, index) => {
-				if (index != cellIndex && headerColumnType[index] !== StructureHeaderColumnType.Custom) {
+				if (index != cellIndex && headerColumnType[index] !== enums.StructureHeaderColumnType.Custom) {
 					modifiedStructureEntries[structureEntryIndex].cellSelection[index] = !selectedCell;
 				}
 			});

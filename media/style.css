@@ -63,7 +63,7 @@ html {
 
 div.resizable-content {
     min-height: 30px;
-    min-width: 50px;
+    min-width: 20px;
     resize: horizontal;
     overflow: auto;
 }

@@ -8,7 +8,7 @@ Tracy is a Visual Studio Code extension for the analysis of logs. It is meant as
 </div>
 
 ## Installation
-To install Tracy in Visual Studio Code:
+To install Tracy in Visual Studio Code: test
 1. Obtain the plugin `.vsix` file:
     - If you want to install the latest release, go to the [Latest release](https://github.com/TNO/vscode-tracy/releases/latest) and download the `vscode-tracy-X.X.X.vsix` file under *Assests*.
     - If you want to install a specific commit, click on the :heavy_check_mark: next to the commit -> *Details* -> *Summary* -> under *Artifacts*, *vscode-vsix* and extract the downloaded `vscode-vsix.zip`.

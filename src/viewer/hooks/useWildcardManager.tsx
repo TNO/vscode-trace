@@ -1,6 +1,6 @@
 import React, { ReactNode } from "react";
 import { wildcardStyle } from "./useStyleManager";
-import { Wildcard, CellContents } from "../types";
+import { Wildcard, CellContents } from "../interfaces";
 
 export const createWildcard = (
 	structureEntryIndex: number,
